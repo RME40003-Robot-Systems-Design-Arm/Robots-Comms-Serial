@@ -26,8 +26,5 @@
     <CopyFileToFolders Include="libserialport-cmake-master\build_x64\libserialport.dll">
       <Filter>External References</Filter>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="..\..\..\..\opencv\build\x64\vc15\bin\opencv_world460d.dll">
-      <Filter>External References</Filter>
-    </CopyFileToFolders>
   </ItemGroup>
 </Project>

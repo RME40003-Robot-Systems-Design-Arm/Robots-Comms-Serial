@@ -1,25 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <libserialport.h>
+//#include <libserialport.h>
 
 #define BAUD 9600
 
 #include "opencv2/highgui/highgui.hpp"
 #include <iostream>
 #include <vector>
-#include <stdio.h>
 #include <opencv2/imgproc/imgproc.hpp>
 
 
 using namespace cv;
 using namespace std;
-
-
-//std::tuple<int, double, std::string> getDetails(Mat image_in) {
-//
-// This function will return the x and y position for the center of each cube 
-// Later Ill get the colours by appoximating avg colour in the center of each cube
-
 
 
 class Cube {
@@ -31,15 +23,12 @@ public:
 		LOADING_BAY = 1,
 		BUFFER = 2
 	};
+	Location location = Location::LOADING_BAY;
 };
 
 
-void getDetails(Mat image_in) {
-
-	if (image_in.empty()) {
-		std::cerr << "Image lost";
-		return;
-	}
+vector<Cube> get_cubes(Mat image_in) {
+	vector<Cube> cubes;
 
 	Mat hue, stauration, value, thresh, blurred, hsv_frame;
 	cvtColor(image_in, hsv_frame, COLOR_BGR2HSV);
@@ -51,45 +40,17 @@ void getDetails(Mat image_in) {
 	extractChannel(blurred, value, 1);
 	extractChannel(blurred, hue, 0);
 
-	Mat v_sobel = (Mat_<float>(3, 3) <<
-		1.0f, 2.0f, 1.0f,
-		0.0f, 0.0f, 0.0f,
-		-1.0f, -2.0f, -1.0f
-		);
-
-	Mat h_sobel = (Mat_<float>(3, 3) <<
-		-1.0f, 0.0f, 1.0f,
-		-2.0f, 0.0f, 2.0f,
-		-1.0f, 0.0f, 1.0f
-		);
-
-	Mat h_sobeled_img_left, h_sobeled_img_right, v_sobeled_img_right, v_sobeled_img_left, sobelled_image;
-
-	filter2D(value, h_sobeled_img_left, -1, v_sobel);
-	filter2D(value, h_sobeled_img_right, -1, -v_sobel);
-
-	filter2D(value, v_sobeled_img_right, -1, h_sobel);
-	filter2D(value, v_sobeled_img_left, -1, -h_sobel);
-
-
-	sobelled_image = h_sobeled_img_left + h_sobeled_img_right + v_sobeled_img_right + v_sobeled_img_left;
-
-	threshold(sobelled_image, sobelled_image, 110, 255, THRESH_BINARY);
-	//cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
-	cv::Mat kernel_2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
-	//cv::morphologyEx(sobelled_image, sobelled_image, cv::MORPH_OPEN, kernel_2);
-	//cv::morphologyEx(sobelled_image, sobelled_image, cv::MORPH_CLOSE, kernel);
-
-	//threshold(blurred, blurred, 150, 255, THRESH_BINARY);
-	//imshow("thesh_img", sobelled_image);
+	cv::Mat kernel_2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(11,11));
+	morphologyEx(value, value, MORPH_CLOSE, kernel_2, cv::Point(-1, -1), 3);
+	threshold(value, value, 100, 255, THRESH_BINARY);
 
 	std::vector<std::vector<cv::Point>> contours;
 	std::vector<cv::Vec4i> hierarchy;
-	cv::findContours(sobelled_image, contours, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
+	cv::findContours(value, contours, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
 	std::vector<cv::Moments> mu(contours.size());
 	std::vector<cv::Point2f> mc(contours.size());
 
-
+	imshow("sobelled_images", value);
 	for (size_t i = 0; i < contours.size(); ++i) {
 
 		// Get bounding rectangle
@@ -161,6 +122,8 @@ void getDetails(Mat image_in) {
 			detected_cube.pos = centre;
 			detected_cube.location = Cube::Location::LOADING_BAY;
 
+			cubes.push_back(detected_cube);
+
 			// Print information
 			std::cout << "Contour #" << i + 1 << ":\n";
 			std::cout << "  Width: " << width << " px\n";
@@ -201,77 +164,33 @@ void getDetails(Mat image_in) {
 		}
 	}
 
-	for (size_t i = 0; i < contours.size(); i++) {
-		if (contours[i].empty()) {
-			continue;
-		}
-
-		// Calculate moments and centroid
-		mu[i] = cv::moments(contours[i]);
-
-		if (mu[i].m00 > 10000.0) {
-			mc[i] = cv::Point2f(
-				static_cast<float>(mu[i].m10 / mu[i].m00),
-				static_cast<float>(mu[i].m01 / mu[i].m00)
-			);
-		}
-		cv::imshow("Contours and Centroids", sobelled_image);
-
-	}
+return cubes;
 }
 
 
-
-
-
-
-//findContours(sobelled_image, sobelled_image, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
-
-/*
-for (size_t i = 0; i < contours.size(); i++) {
-	Moments m = moments(contours[i]);
-	if (m.m00 > 10.0) {
-		double area = m.m00;
-
-		// Centroid (Center of Mass) calculation (from Cv2 docs)
-		int cx = static_cast<int>(m.m10 / m.m00);
-		int cy = static_cast<int>(m.m01 / m.m00);
-
-		// fitting a shape to the contours (from cv2 docs)
-		std::vector<cv::Point> approx;
-		double perimeter = cv::arcLength(contours[i], true);
-		cv::approxPolyDP(contours[i], approx, 0.02 * perimeter, true);
-		int sides = approx.size();
-
-		if (sides == 4) {
-			std::cout << "found cube!!!!";
-		}
-	}
-}*/
-
-//What to give:
-	// Want order to 
-
-//String win_name = ""
-//
+//vector<int> create_instructions() {
+//	// basically the user selects which cube they want moved
+//	
+//}
 
 
 int main(int argc, char* argv[])
 {
 	/*Variables for camera function*/
 	int n = 0;
-	char filename[200];
+	//char filename[200];
 	string window_name = "video | q or esc to quit";
 	Mat frame;
 	/*Setup camera and check for camera*/
 	namedWindow(window_name);
-	VideoCapture cap(0);
-	if (!cap.isOpened()) {
 
+	VideoCapture cap("sample.mp4");
+	//VideoCapture cap(0);
+
+	if (!cap.isOpened()) {
 		cout << "cannot open camera";
 
 	}
-
 	/*Variables for serial comms */
 	//struct sp_port* port;
 	//int err;
@@ -310,7 +229,8 @@ int main(int argc, char* argv[])
 		/* set up to exit when q key is entered */
 	while (key != 'q') {
 		cap >> frame;
-		getDetails(frame);
+		vector<Cube> cubes_vector = get_cubes(frame);
+		
 
 		///*The code contained here reads and outputs a single pixel value at (10,15)*/
 		//Vec3b intensity = frame.at<Vec3b>(10, 15);
