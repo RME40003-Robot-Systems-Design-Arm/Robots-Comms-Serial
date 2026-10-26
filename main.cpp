@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-//#include <libserialport.h>
+#include <libserialport.h>
 
 #define BAUD 9600
 
@@ -11,10 +11,8 @@
 #include <thread>
 #include <mutex>
 
-
 using namespace cv;
 using namespace std;
-
 
 class Cube {
 public:
@@ -26,6 +24,13 @@ public:
 	Scalar colour;
 	Point pos;
 	int grid_position = -1;
+};
+
+
+class serial_buffer {
+public:
+	condition_variable thread_status;
+	vector<Point, Point> source_to_target_buffer;
 };
 
 
@@ -241,6 +246,66 @@ void get_user_input(const vector<Cube>& detected_cubes, const Mat& image_in) {
 
 
 
+void encode_positions(char* argv[], Point start, Point end) {
+	char cmd;
+
+
+	/*Variables for serial comms */
+	struct sp_port* port;
+	int err;
+	int key = 0;
+	//char cmd;
+	const char* port_name = "COM17"; 
+
+	/* get port name */
+	err = sp_get_port_by_name(port_name, &port);
+	if (err == SP_OK)
+		/* open port */
+		err = sp_open(port, SP_MODE_WRITE);
+	if (err != SP_OK)
+	{
+		/* return error */
+		fprintf(stderr, " Can't open port %s\n", argv[1]);
+		exit(2);
+	}
+
+	/* set Baud rate */
+	sp_set_baudrate(port, BAUD);
+	/* set the number of bits */
+	sp_set_bits(port, 8);
+
+	int small_debouce_wait = 100;
+	int prog_register_timeout = 600;
+
+	/* specify the comand to send to the port */
+	for (Point point : {start, end}) {
+		cmd = static_cast<char>(point.x);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(255);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
+
+		cmd = static_cast<char>(point.y);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(255);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
+
+		cmd = static_cast<char>(1);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(255);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
+	}
+
+}
+//
+//void serialise_path() {
+//	// So for every path created, 
+//}
 
 int main(int argc, char* argv[])
 {
@@ -252,96 +317,52 @@ int main(int argc, char* argv[])
 	/*Setup camera and check for camera*/
 	namedWindow(window_name);
 
-	VideoCapture cap("sample.mp4");
+	VideoCapture cap("sample_2.mp4");
 	//VideoCapture cap(0);
 
 	if (!cap.isOpened()) {
 		cout << "cannot open camera";
-
 	}
-	/*Variables for serial comms */
-	//struct sp_port* port;
-	//int err;
+
 	int key = 0;
 	//char cmd;
 
-	/* Set up and open the port */
-	/* check port usage */
-	//if (argc < 2)
-	//{
-	//	/* return error */
-	//	fprintf(stderr, " Port use\n");
-	//	exit(1);
-	//}
+	Point start, end;
 
-	///* get port name */
-	//err = sp_get_port_by_name(argv[1], &port);
-	//if (err == SP_OK)
-	//	/* open port */
-	//	err = sp_open(port, SP_MODE_WRITE);
-	//if (err != SP_OK)
-	//{
-	//	/* return error */
-	//	fprintf(stderr, " Can't open port %s\n", argv[1]);
-	//	exit(2);
-		//}
+	start.x = 1;
+	start.y = 2;
 
-		///* set Baud rate */
-		//sp_set_baudrate(port, BAUD);
-		///* set the number of bits */
-		//sp_set_bits(port, 8);
+	end.x = 3;
+	end.y = 4;
 
-		/* specify the comand to send to the port */
-		//cmd = 1;
+	encode_positions(argv, start, end);
+
 
 		/* set up to exit when q key is entered */
-	while (key != 'q') {
-		cap >> frame;
-		vector<Cube> cubes_vector = get_cubes(frame);
-		get_user_input(cubes_vector, frame);
-		///*The code contained here reads and outputs a single pixel value at (10,15)*/
-		//Vec3b intensity = frame.at<Vec3b>(10, 15);
-		//int blue = intensity.val[0];
-		//int green = intensity.val[1];
-		//int red = intensity.val[2];
-		//cout << "Intensity = " << endl << " " << blue << " " << green << " " << red << endl << endl;
-		///*End of modifying pixel values*/
+	//while (key != 'q') {
+	//	cap >> frame;
+	//	vector<Cube> cubes_vector = get_cubes(frame);
+	//	get_user_input(cubes_vector, frame);
+	//	imshow(window_name, frame);
+	//	
+	//	char key = (char)waitKey(25);
+	//	/* write the number "cmd" to the port */
 
-		///*The code contained here modifies the output pixel values*/
-		//	/* Modify the pixels of the RGB image */
-		//for (int i = 150; i < frame.rows; i++)
-		//{
-		//	for (int j = 150; j < frame.cols; j++)
-		//	{
-		//		/*The following lines make the red and blue channels zero
-		//		(this section of the image will be shades of green)*/
-		//		frame.at<Vec3b>(i, j)[0] = 0;
-		//		frame.at<Vec3b>(i, j)[2] = 0;
-		//	}
-		//}
+	//	switch (key) {
+	//	case 'q':
+	//	case 'Q':
+	//	case 27: //escape key
+	//		return 0;
+	//	case ' ': //Save an image
+	//		//sprintf_s(filename, "filename%.3d.jpg", n++);
+	//		//imwrite(filename, frame);
+	//		//cout << "Saved " << filename << endl;
 
-		/*End of modifying pixel values*/
-
-		imshow(window_name, frame);
-		char key = (char)waitKey(25);
-		/* write the number "cmd" to the port */
-		//sp_blocking_write(port, &cmd, 1, 100);
-
-		switch (key) {
-		case 'q':
-		case 'Q':
-		case 27: //escape key
-			return 0;
-		case ' ': //Save an image
-			//sprintf_s(filename, "filename%.3d.jpg", n++);
-			//imwrite(filename, frame);
-			//cout << "Saved " << filename << endl;
-
-			break;
-		default:
-			break;
-		}
-	}
+	//		break;
+	//	default:
+	//		break;
+	//	}
+	//}
 	/* close the port */
 	//sp_close(port);
 	return 0;
