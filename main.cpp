@@ -8,6 +8,8 @@
 #include <iostream>
 #include <vector>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <thread>
+#include <mutex>
 
 
 using namespace cv;
@@ -16,39 +18,42 @@ using namespace std;
 
 class Cube {
 public:
-	cv::Point pos;
-	string colour;
-
 	enum class Location {
 		LOADING_BAY = 1,
 		BUFFER = 2
 	};
 	Location location = Location::LOADING_BAY;
+	Scalar colour;
+	Point pos;
+	int grid_position = -1;
 };
 
 
 vector<Cube> get_cubes(Mat image_in) {
 	vector<Cube> cubes;
+	Mat scaled_input_image;
 
+	float sf = 4;
+	float img_width_scaled = round(image_in.size().width / sf);
+	float img_height_scaled = round(image_in.size().height / sf);
+
+	resize(image_in, scaled_input_image, cv::Size(img_width_scaled, img_height_scaled));
 	Mat hue, stauration, value, thresh, blurred, hsv_frame;
-	cvtColor(image_in, hsv_frame, COLOR_BGR2HSV);
-	medianBlur(hsv_frame, blurred, 11);
-	//box(hsv_frame, blurred, 13);
 
-	//split(image_in, colour_channel);
-	extractChannel(blurred, stauration, 2);
+	cvtColor(scaled_input_image, hsv_frame, COLOR_BGR2HSV);
+	medianBlur(hsv_frame, blurred, 3);
 	extractChannel(blurred, value, 1);
-	extractChannel(blurred, hue, 0);
 
-	cv::Mat kernel_2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(11,11));
+	cv::Mat kernel_2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3,3));
 	morphologyEx(value, value, MORPH_CLOSE, kernel_2, cv::Point(-1, -1), 3);
 	threshold(value, value, 100, 255, THRESH_BINARY);
+	
+	resize(value, value, cv::Size(img_width_scaled * sf, img_height_scaled * sf));
 
 	std::vector<std::vector<cv::Point>> contours;
 	std::vector<cv::Vec4i> hierarchy;
+
 	cv::findContours(value, contours, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
-	std::vector<cv::Moments> mu(contours.size());
-	std::vector<cv::Point2f> mc(contours.size());
 
 	imshow("sobelled_images", value);
 	for (size_t i = 0; i < contours.size(); ++i) {
@@ -62,7 +67,7 @@ vector<Cube> get_cubes(Mat image_in) {
 		// Get contour area
 		double area = cv::contourArea(contours[i]);
 
-		if (area > 1500.0) {
+		if (area > 1500) {
 
 			// Calculate centre of bounding box
 			cv::Point centre(
@@ -84,94 +89,157 @@ vector<Cube> get_cubes(Mat image_in) {
 			// Calculate average BGR colour inside the contour
 			cv::Scalar meanColour = cv::mean(image_in, mask);
 
-			int blue = static_cast<int>(meanColour[0]);
-			int green = static_cast<int>(meanColour[1]);
-			int red = static_cast<int>(meanColour[2]);
-
-			// Determine predominant colour (basic classification)
-			std::string colourName;
-
-			if (red > green * 1.7 && red > blue * 1.3) {
-				colourName = "Red";
-			}
-			else if (green > red * 1.3 && green > blue * 1.3) {
-				colourName = "Green";
-			}
-			else if (blue > red * 1.3 && blue > green * 1.3) {
-				colourName = "Blue";
-			}
-			else if (red > 180 && green > 180 && blue < 100) {
-				colourName = "Yellow";
-			}
-			else if (red < 60 && green < 60 && blue < 60) {
-				colourName = "Black";
-			}
-			else if (red > 200 && green > 200 && blue > 200) {
-				colourName = "White";
-			}
-			else if (red > 180 && green > 80 && green < 180 &&
-				blue < 100) {
-				colourName = "Orange";
-			}
-			else {
-				colourName = "Orange AF";
-			}
-
 			Cube detected_cube;
-			detected_cube.colour = colourName;
+			detected_cube.colour = meanColour;
 			detected_cube.pos = centre;
 			detected_cube.location = Cube::Location::LOADING_BAY;
 
 			cubes.push_back(detected_cube);
 
-			// Print information
-			std::cout << "Contour #" << i + 1 << ":\n";
-			std::cout << "  Width: " << width << " px\n";
-			std::cout << "  Height: " << height << " px\n";
-			std::cout << "  Area: " << area << " px^2\n";
-			std::cout << "  Centre: (" << centre.x
-				<< ", " << centre.y << ")\n";
-			std::cout << "  Predominant colour: "
-				<< colourName << "\n";
-
-			// Draw bounding box
 			cv::rectangle(
 				image_in,
 				boundingBox,
-				cv::Scalar(255, 255, 255),
-				2
+				meanColour*1.5,
+				5
 			);
 
-			// Draw centre point
 			cv::circle(
 				image_in,
 				centre,
-				4,
-				cv::Scalar(0, 0, 255),
+				10,
+				Scalar(255,255,255),
 				cv::FILLED
-			);
-
-			// Label colour above bounding box
-			cv::putText(
-				image_in,
-				colourName,
-				cv::Point(boundingBox.x, boundingBox.y - 10),
-				cv::FONT_HERSHEY_SIMPLEX,
-				0.7,
-				cv::Scalar(0, 255, 255),
-				2
 			);
 		}
 	}
-
 return cubes;
 }
 
+void drawCenteredRectangleRect(cv::Mat& img, cv::Point center, int width, int height, const cv::Scalar& color, int thickness = -1) {
+	cv::Rect rect(center.x - width / 2, center.y - height / 2, width, height);
+	cv::rectangle(img, rect, color, thickness);
+}
 
-//vector<int> create_instructions() {
-//	// basically the user selects which cube they want moved
-//	
-//}
+void get_user_input(const vector<Cube>& detected_cubes, const Mat& image_in) {
+	if (image_in.empty()) return;
+
+	struct Move {
+		Cube cube;
+		Point destination;
+	};
+
+	struct UIState {
+		vector<Cube> cubes;
+		vector<Move> buffer;
+		Cube selectedCube;
+		Point destination;
+		bool hasSelection = false;
+		bool hasDestination = false;
+		Rect submit;
+		Rect placementArea;
+	};
+
+	static UIState ui;
+	ui.cubes = detected_cubes;
+	ui.submit = Rect(10, image_in.rows + 10, 120, 40);
+	ui.placementArea = Rect(0, 0, image_in.cols, image_in.rows);
+
+	Mat screen(image_in.rows + 100, image_in.cols,
+		CV_8UC3, Scalar(0, 0, 0));
+
+	for (const Cube& cube : ui.cubes) {
+		drawCenteredRectangleRect(screen, cube.pos, 80, 80, cube.colour);
+	}
+
+	// Yellow outline around the selected cube
+	if (ui.hasSelection) {
+		rectangle(screen,
+			Rect(ui.selectedCube.pos.x - 40,
+				ui.selectedCube.pos.y - 40, 80, 80),
+			Scalar(0, 255, 255), 3);
+	}
+
+	// Show the chosen destination
+	if (ui.hasDestination) {
+		circle(screen, ui.destination, 12, Scalar(0, 255, 255), 3);
+	}
+
+	bool ready = ui.hasSelection && ui.hasDestination;
+
+	rectangle(screen, ui.submit,
+		ready ? Scalar(0, 120, 0) : Scalar(70, 70, 70), FILLED);
+
+	putText(screen, "Submit", ui.submit.tl() + Point(15, 27),
+		FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 255, 255), 1);
+
+	putText(screen, "Buffered: " + to_string(ui.buffer.size()),
+		Point(145, image_in.rows + 37),
+		FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 255, 255), 1);
+
+	string instruction = !ui.hasSelection ? "Select a cube"
+		: !ui.hasDestination ? "Click a placement position"
+		: "Press Submit, or click to change placement";
+
+	putText(screen, instruction, Point(10, image_in.rows + 80),
+		FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+
+	namedWindow("Cube selection", WINDOW_AUTOSIZE);
+
+	setMouseCallback("Cube selection",
+		[](int event, int x, int y, int, void* userdata) {
+			if (event != EVENT_LBUTTONDOWN) return;
+
+			UIState& state = *static_cast<UIState*>(userdata);
+			Point click(x, y);
+
+			if (state.submit.contains(click)) {
+				// Submit only works after both steps are complete
+				if (!state.hasSelection || !state.hasDestination) return;
+
+				state.buffer.push_back(
+					Move{ state.selectedCube, state.destination });
+
+				cout << "Buffer update: move cube from ("
+					<< state.selectedCube.pos.x << ", "
+					<< state.selectedCube.pos.y << ") to ("
+					<< state.destination.x << ", "
+					<< state.destination.y << ")\n";
+
+				// Process or send state.buffer here.
+
+				state.hasSelection = false;
+				state.hasDestination = false;
+				return;
+			}
+
+			if (!state.placementArea.contains(click)) return;
+
+			if (!state.hasSelection) {
+				// Match the clickable area to the 80 x 80 rectangle
+				for (const Cube& cube : state.cubes) {
+					Rect button(cube.pos.x - 40, cube.pos.y - 40, 80, 80);
+
+					if (button.contains(click)) {
+						state.selectedCube = cube;
+						state.hasSelection = true;
+						state.hasDestination = false;
+						break;
+					}
+				}
+			}
+			else {
+				// Placement is only available after selecting a cube
+				state.destination = click;
+				state.hasDestination = true;
+			}
+		},
+		&ui
+	);
+
+	imshow("Cube selection", screen);
+}
+
+
 
 
 int main(int argc, char* argv[])
@@ -230,8 +298,7 @@ int main(int argc, char* argv[])
 	while (key != 'q') {
 		cap >> frame;
 		vector<Cube> cubes_vector = get_cubes(frame);
-		
-
+		get_user_input(cubes_vector, frame);
 		///*The code contained here reads and outputs a single pixel value at (10,15)*/
 		//Vec3b intensity = frame.at<Vec3b>(10, 15);
 		//int blue = intensity.val[0];
