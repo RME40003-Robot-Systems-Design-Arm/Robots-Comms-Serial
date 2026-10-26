@@ -274,15 +274,20 @@ void encode_positions(char* argv[], Point start, Point end) {
 	/* set the number of bits */
 	sp_set_bits(port, 8);
 
-	int small_debouce_wait = 100;
-	int prog_register_timeout = 600;
+	int small_debouce_wait = 50;
+	int prog_register_timeout = 250;
 
 	/* specify the comand to send to the port */
 	for (Point point : {start, end}) {
 		cmd = static_cast<char>(point.x);
 		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
 		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+
 		cmd = static_cast<char>(255);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+
+		cmd = static_cast<char>(0);
 		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
 		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
 
@@ -291,12 +296,18 @@ void encode_positions(char* argv[], Point start, Point end) {
 		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
 		cmd = static_cast<char>(255);
 		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(0);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
 		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
 
 		cmd = static_cast<char>(1);
 		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
 		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
 		cmd = static_cast<char>(255);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(0);
 		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
 		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
 	}
@@ -329,11 +340,11 @@ int main(int argc, char* argv[])
 
 	Point start, end;
 
-	start.x = 1;
-	start.y = 2;
+	start.x = 253;
+	start.y = 10;
 
-	end.x = 3;
-	end.y = 4;
+	end.x = 254;
+	end.y = 120;
 
 	encode_positions(argv, start, end);
 
