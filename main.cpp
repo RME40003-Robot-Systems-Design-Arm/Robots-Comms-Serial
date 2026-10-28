@@ -34,6 +34,15 @@ public:
 };
 
 
+
+enum class ROBOT_STATE {
+	CALIBRATION_STATE = 1,
+	FINDING_CUBES = 2,
+	SENDING_COORDS = 3,
+	MOVING = 4
+};
+
+
 vector<Cube> get_cubes(Mat image_in) {
 	vector<Cube> cubes;
 	Mat scaled_input_image;
@@ -125,6 +134,77 @@ void drawCenteredRectangleRect(cv::Mat& img, cv::Point center, int width, int he
 	cv::rectangle(img, rect, color, thickness);
 }
 
+
+
+
+void encode_positions(Point start, Point end) {
+	char cmd;
+
+
+	/*Variables for serial comms */
+	struct sp_port* port;
+	int err;
+	int key = 0;
+	//char cmd;
+	const char* port_name = "COM17";
+
+	/* get port name */
+	err = sp_get_port_by_name(port_name, &port);
+	if (err == SP_OK)
+		/* open port */
+		err = sp_open(port, SP_MODE_WRITE);
+	if (err != SP_OK)
+	{
+		/* return error */
+		//fprintf(stderr, " Can't open port %s\n", argv[1]);
+		exit(2);
+	}
+
+	/* set Baud rate */
+	sp_set_baudrate(port, BAUD);
+	/* set the number of bits */
+	sp_set_bits(port, 8);
+
+	int small_debouce_wait = 50;
+	int prog_register_timeout = 250;
+
+	/* specify the comand to send to the port */
+	for (Point point : {start, end}) {
+		cmd = static_cast<char>(point.x);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+
+		cmd = static_cast<char>(255);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+
+		cmd = static_cast<char>(0);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
+
+		cmd = static_cast<char>(point.y);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(255);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(0);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
+
+		cmd = static_cast<char>(1);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(255);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
+		cmd = static_cast<char>(0);
+		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
+		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
+	}
+
+}
+
 void get_user_input(const vector<Cube>& detected_cubes, const Mat& image_in) {
 	if (image_in.empty()) return;
 
@@ -209,7 +289,16 @@ void get_user_input(const vector<Cube>& detected_cubes, const Mat& image_in) {
 					<< state.selectedCube.pos.y << ") to ("
 					<< state.destination.x << ", "
 					<< state.destination.y << ")\n";
+					
+				Point start_point, end_point;
+				float cm_pix_ratio = 0.18514;
 
+				start_point.x = (state.selectedCube.pos.x * cm_pix_ratio)+12; // 12 is the offset from the origin
+				start_point.y = state.selectedCube.pos.y * cm_pix_ratio;
+				end_point.x = state.destination.x * cm_pix_ratio;
+				end_point.y = state.destination.y * cm_pix_ratio;
+
+				encode_positions(start_point, end_point);
 				// Process or send state.buffer here.
 
 				state.hasSelection = false;
@@ -246,135 +335,43 @@ void get_user_input(const vector<Cube>& detected_cubes, const Mat& image_in) {
 
 
 
-void encode_positions(char* argv[], Point start, Point end) {
-	char cmd;
-
-
-	/*Variables for serial comms */
-	struct sp_port* port;
-	int err;
-	int key = 0;
-	//char cmd;
-	const char* port_name = "COM17"; 
-
-	/* get port name */
-	err = sp_get_port_by_name(port_name, &port);
-	if (err == SP_OK)
-		/* open port */
-		err = sp_open(port, SP_MODE_WRITE);
-	if (err != SP_OK)
-	{
-		/* return error */
-		fprintf(stderr, " Can't open port %s\n", argv[1]);
-		exit(2);
-	}
-
-	/* set Baud rate */
-	sp_set_baudrate(port, BAUD);
-	/* set the number of bits */
-	sp_set_bits(port, 8);
-
-	int small_debouce_wait = 50;
-	int prog_register_timeout = 250;
-
-	/* specify the comand to send to the port */
-	for (Point point : {start, end}) {
-		cmd = static_cast<char>(point.x);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
-
-		cmd = static_cast<char>(255);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
-
-		cmd = static_cast<char>(0);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
-
-		cmd = static_cast<char>(point.y);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
-		cmd = static_cast<char>(255);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
-		cmd = static_cast<char>(0);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
-
-		cmd = static_cast<char>(1);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
-		cmd = static_cast<char>(255);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(small_debouce_wait));
-		cmd = static_cast<char>(0);
-		sp_blocking_write(port, &cmd, 1, small_debouce_wait);
-		this_thread::sleep_for(std::chrono::milliseconds(prog_register_timeout));
-	}
-
-}
 //
 //void serialise_path() {
 //	// So for every path created, 
 //}
-
-int main(int argc, char* argv[])
+int main()
 {
-	/*Variables for camera function*/
-	int n = 0;
-	//char filename[200];
-	string window_name = "video | q or esc to quit";
-	Mat frame;
-	/*Setup camera and check for camera*/
-	namedWindow(window_name);
+	try {
+		VideoCapture cap(0); // Try 0 if you intend the default camera.
 
-	VideoCapture cap("sample_2.mp4");
-	//VideoCapture cap(0);
+		if (!cap.isOpened()) {
+			cerr << "Cannot open camera\n";
+			return 1;
+		}
 
-	if (!cap.isOpened()) {
-		cout << "cannot open camera";
+		Mat frame;
+
+		while (true) {
+			if (!cap.read(frame) || frame.empty()) {
+				cerr << "Failed to capture a frame\n";
+				break;
+			}
+			imshow("raw_frame", frame);
+			vector<Cube> cubes = get_cubes(frame);
+			get_user_input(cubes, frame);
+
+			int key = waitKey(1);
+			if (key == 'q' || key == 27) {
+				break;
+			}
+		}
+
+		destroyAllWindows();
+	}
+	catch (const cv::Exception& e) {
+		cerr << "OpenCV error: " << e.what() << '\n';
+		return 1;
 	}
 
-	int key = 0;
-	//char cmd;
-
-	Point start, end;
-
-	start.x = 253;
-	start.y = 10;
-
-	end.x = 254;
-	end.y = 120;
-
-	encode_positions(argv, start, end);
-
-
-		/* set up to exit when q key is entered */
-	//while (key != 'q') {
-	//	cap >> frame;
-	//	vector<Cube> cubes_vector = get_cubes(frame);
-	//	get_user_input(cubes_vector, frame);
-	//	imshow(window_name, frame);
-	//	
-	//	char key = (char)waitKey(25);
-	//	/* write the number "cmd" to the port */
-
-	//	switch (key) {
-	//	case 'q':
-	//	case 'Q':
-	//	case 27: //escape key
-	//		return 0;
-	//	case ' ': //Save an image
-	//		//sprintf_s(filename, "filename%.3d.jpg", n++);
-	//		//imwrite(filename, frame);
-	//		//cout << "Saved " << filename << endl;
-
-	//		break;
-	//	default:
-	//		break;
-	//	}
-	//}
-	/* close the port */
-	//sp_close(port);
 	return 0;
 }
