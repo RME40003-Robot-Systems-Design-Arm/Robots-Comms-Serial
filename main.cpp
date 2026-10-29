@@ -312,7 +312,7 @@ void get_user_input(const vector<Cube>& detected_cubes, const Mat& image_in) {
 				// Match the clickable area to the 80 x 80 rectangle
 				for (const Cube& cube : state.cubes) {
 					Rect button(cube.pos.x - 40, cube.pos.y - 40, 80, 80);
-
+					  
 					if (button.contains(click)) {
 						state.selectedCube = cube;
 						state.hasSelection = true;
